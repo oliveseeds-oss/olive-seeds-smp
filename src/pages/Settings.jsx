@@ -1,251 +1,217 @@
 import { useState, useEffect } from "react";
-import { Settings as SettingsIcon, Save, Lock, Calendar, AlertTriangle, CheckCircle } from "lucide-react";
+import { Settings as SettingsIcon, Save, Lock, Calendar, AlertTriangle, CheckCircle, ShieldAlert } from "lucide-react";
 import { db, auth } from "../firebase/config";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
-import { format, startOfMonth } from "date-fns";
+import { format } from "date-fns";
+import Modal from "../components/ui/Modal";
 
 const DEFAULT_DAY_TASKS = {
-  Monday: "Blog",
-  Tuesday: "App/Web",
-  Wednesday: "Carousel",
-  Thursday: "Reel",
-  Friday: "YouTube/Podcast",
-  Saturday: "Campaign/Brand",
-  Sunday: "Review & Plan",
+  Monday:"Blog", Tuesday:"App/Web", Wednesday:"Carousel",
+  Thursday:"Reel", Friday:"YouTube/Podcast", Saturday:"Campaign/Brand", Sunday:"Review & Plan"
 };
-
-const TASK_OPTIONS = [
-  "Blog", "Carousel", "Reel", "YouTube/Podcast", "Tweet",
-  "Campaign/Brand", "App/Web", "Review & Plan", "Rest", "Custom"
-];
+const TASK_OPTIONS = ["Blog","Carousel","Reel","YouTube/Podcast","Tweet","Campaign/Brand","App/Web","Review & Plan","Rest","Custom"];
 
 export default function SettingsPage() {
   const { user } = useAuth();
-  const [dayTasks, setDayTasks] = useState({ ...DEFAULT_DAY_TASKS });
-  const [lastChanged, setLastChanged] = useState(null);
-  const [savingDay, setSavingDay] = useState(false);
+  const [dayTasks, setDayTasks] = useState({...DEFAULT_DAY_TASKS});
+  const [savedTasks, setSavedTasks] = useState({...DEFAULT_DAY_TASKS});
+  const [saving, setSaving] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [savingPw, setSavingPw] = useState(false);
+  const [lastChanged, setLastChanged] = useState(null);
 
-  useEffect(() => {
-    getDoc(doc(db, "settings", "dayMapping")).then((d) => {
-      if (d.exists()) {
-        const data = d.data();
-        setDayTasks(data.tasks || DEFAULT_DAY_TASKS);
-        setLastChanged(data.lastChanged || null);
+  useEffect(()=>{
+    getDoc(doc(db,"settings","dayMapping")).then(d=>{
+      if(d.exists()){
+        const data=d.data();
+        setDayTasks(data.tasks||DEFAULT_DAY_TASKS);
+        setSavedTasks(data.tasks||DEFAULT_DAY_TASKS);
+        setLastChanged(data.lastChanged||null);
       }
     });
-  }, []);
+  },[]);
 
-  const canChangeMapping = () => {
-    if (!lastChanged) return true;
-    const last = new Date(lastChanged);
-    const thisMonth = format(startOfMonth(new Date()), "yyyy-MM");
-    const lastMonth = format(startOfMonth(last), "yyyy-MM");
-    return thisMonth !== lastMonth;
-  };
+  const hasChanges = JSON.stringify(dayTasks)!==JSON.stringify(savedTasks);
 
   const saveDayMapping = async () => {
-    if (!canChangeMapping()) {
-      toast.error("Day mapping can only be changed once per month");
-      return;
-    }
-    setSavingDay(true);
+    setSaving(true);
     try {
-      await setDoc(doc(db, "settings", "dayMapping"), {
-        tasks: dayTasks,
-        lastChanged: new Date().toISOString(),
-        updatedBy: user?.email,
+      await setDoc(doc(db,"settings","dayMapping"),{
+        tasks:dayTasks,
+        lastChanged:new Date().toISOString(),
+        updatedBy:user?.email,
       });
+      setSavedTasks({...dayTasks});
       setLastChanged(new Date().toISOString());
+      setShowConfirm(false);
       toast.success("Day mapping saved!");
-    } catch {
-      toast.error("Failed to save");
-    } finally {
-      setSavingDay(false);
-    }
+    } catch { toast.error("Save failed"); }
+    finally { setSaving(false); }
   };
 
   const changePassword = async () => {
-    if (!oldPw || !newPw || !confirmPw) return toast.error("Fill all fields");
-    if (newPw !== confirmPw) return toast.error("Passwords don't match");
-    if (newPw.length < 6) return toast.error("Password must be at least 6 characters");
+    if(!oldPw||!newPw||!confirmPw) return toast.error("Fill all fields");
+    if(newPw!==confirmPw) return toast.error("Passwords don't match");
+    if(newPw.length<6) return toast.error("Min 6 characters");
     setSavingPw(true);
     try {
-      const cred = EmailAuthProvider.credential(user.email, oldPw);
-      await reauthenticateWithCredential(auth.currentUser, cred);
-      await updatePassword(auth.currentUser, newPw);
+      const cred=EmailAuthProvider.credential(user.email,oldPw);
+      await reauthenticateWithCredential(auth.currentUser,cred);
+      await updatePassword(auth.currentUser,newPw);
       toast.success("Password updated!");
       setOldPw(""); setNewPw(""); setConfirmPw("");
-    } catch (e) {
-      toast.error(e.message?.replace("Firebase: ", "") || "Failed to update password");
-    } finally {
-      setSavingPw(false);
-    }
+    } catch(e){ toast.error(e.message?.replace("Firebase: ","")||"Failed"); }
+    finally { setSavingPw(false); }
   };
 
-  const canChange = canChangeMapping();
+  const DAY_COLORS = { Monday:"#6366f1",Tuesday:"#06b6d4",Wednesday:"#8b5cf6",Thursday:"#f43f5e",Friday:"#f59e0b",Saturday:"#10b981",Sunday:"#64748b" };
 
   return (
     <div className="fade-in">
       <div className="section-header">
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div className="stat-icon" style={{ background: "#6b7c2c20", color: "#6b7c2c", marginBottom: 0 }}>
-            <SettingsIcon size={20} />
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:36,height:36,borderRadius:9,background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <SettingsIcon size={18} color="#64748b"/>
           </div>
           <h2 className="section-title">Settings</h2>
         </div>
       </div>
 
-      <div className="grid-2" style={{ alignItems: "start" }}>
+      <div className="grid-2" style={{alignItems:"start"}}>
         {/* Day Mapping */}
-        <div className="card">
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-            <Calendar size={20} color="var(--olive-600)" />
-            <h3 style={{ fontFamily: "var(--font-display)" }}>Day-Task Mapping</h3>
-          </div>
+        <div>
+          <div className="card" style={{marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <Calendar size={17} color="#6366f1"/>
+              <h3>Day-Task Mapping</h3>
+            </div>
+            <p style={{fontSize:"0.78rem",color:"var(--text-3)",marginBottom:16}}>
+              Assign a default content type to each day of the week. A confirmation step protects accidental changes.
+            </p>
 
-          {!canChange && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 14px", background: "#fef3c7", borderRadius: "var(--radius-sm)",
-              marginBottom: 16, border: "1px solid #fde68a",
-            }}>
-              <AlertTriangle size={16} color="#d97706" />
-              <div style={{ fontSize: "0.82rem", color: "#92400e" }}>
-                <strong>Locked until next month.</strong> You already changed the mapping this month.
-                Last changed: {lastChanged ? format(new Date(lastChanged), "MMM d, yyyy") : "—"}
+            {lastChanged && (
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:"var(--primary-bg)",borderRadius:8,marginBottom:14,border:"1px solid #c7d2fe"}}>
+                <CheckCircle size={14} color="#6366f1"/>
+                <span style={{fontSize:"0.78rem",color:"#4338ca",fontWeight:500}}>Last saved: {format(new Date(lastChanged),"MMM d, yyyy 'at' h:mm a")}</span>
               </div>
-            </div>
-          )}
+            )}
 
-          {canChange && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 14px", background: "#dcfce7", borderRadius: "var(--radius-sm)",
-              marginBottom: 16, border: "1px solid #bbf7d0",
-            }}>
-              <CheckCircle size={16} color="#16a34a" />
-              <span style={{ fontSize: "0.82rem", color: "#15803d" }}>
-                You can change the mapping once this month.
-              </span>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {Object.entries(dayTasks).map(([day,task])=>{
+                const changed=task!==savedTasks[day];
+                return (
+                  <div key={day} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:changed?"#fffbeb":"var(--bg)",borderRadius:9,border:changed?"1.5px solid #fde68a":"1.5px solid var(--border-light)"}}>
+                    <div style={{width:8,height:8,borderRadius:2,background:DAY_COLORS[day],flexShrink:0}}/>
+                    <span style={{fontWeight:700,fontSize:"0.84rem",width:82,color:"var(--text-1)"}}>{day}</span>
+                    <select className="form-input form-select" value={task} onChange={e=>setDayTasks(p=>({...p,[day]:e.target.value}))}
+                      style={{padding:"6px 28px 6px 10px",fontSize:"0.82rem",height:34,flex:1}}>
+                      {TASK_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}
+                    </select>
+                    {changed && <span style={{fontSize:"0.65rem",fontWeight:700,color:"#d97706",background:"#fef3c7",padding:"2px 6px",borderRadius:99,flexShrink:0}}>changed</span>}
+                  </div>
+                );
+              })}
             </div>
-          )}
 
-          {Object.entries(dayTasks).map(([day, task]) => (
-            <div key={day} className="form-group" style={{ marginBottom: 10 }}>
-              <label className="form-label">{day}</label>
-              <select
-                className="form-input form-select"
-                value={task}
-                disabled={!canChange}
-                onChange={(e) => setDayTasks(prev => ({ ...prev, [day]: e.target.value }))}
-              >
-                {TASK_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
+            <div style={{display:"flex",gap:8,marginTop:14}}>
+              <button className="btn btn-secondary btn-sm" onClick={()=>setDayTasks({...savedTasks})} disabled={!hasChanges}>
+                Reset
+              </button>
+              <button className="btn btn-primary" style={{flex:1,justifyContent:"center"}} onClick={()=>setShowConfirm(true)} disabled={!hasChanges}>
+                <Save size={14}/> Save Changes
+              </button>
             </div>
-          ))}
-
-          <button
-            className="btn btn-primary"
-            style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
-            onClick={saveDayMapping}
-            disabled={savingDay || !canChange}
-          >
-            {savingDay ? <span className="spinner" /> : <><Save size={15} /> Save Mapping</>}
-          </button>
+          </div>
         </div>
 
         {/* Right column */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {/* Change Password */}
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          {/* Password */}
           <div className="card">
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-              <Lock size={20} color="var(--olive-600)" />
-              <h3 style={{ fontFamily: "var(--font-display)" }}>Change Password</h3>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+              <Lock size={17} color="#6366f1"/>
+              <h3>Change Password</h3>
             </div>
-
             <div className="form-group">
               <label className="form-label">Current Password</label>
-              <input
-                type="password"
-                className="form-input"
-                value={oldPw}
-                onChange={e => setOldPw(e.target.value)}
-                placeholder="••••••••"
-              />
+              <input type="password" className="form-input" value={oldPw} onChange={e=>setOldPw(e.target.value)} placeholder="••••••••"/>
             </div>
             <div className="form-group">
               <label className="form-label">New Password</label>
-              <input
-                type="password"
-                className="form-input"
-                value={newPw}
-                onChange={e => setNewPw(e.target.value)}
-                placeholder="Min. 6 characters"
-              />
+              <input type="password" className="form-input" value={newPw} onChange={e=>setNewPw(e.target.value)} placeholder="Min 6 characters"/>
             </div>
             <div className="form-group">
               <label className="form-label">Confirm New Password</label>
-              <input
-                type="password"
-                className="form-input"
-                value={confirmPw}
-                onChange={e => setConfirmPw(e.target.value)}
-                placeholder="Re-enter new password"
-              />
+              <input type="password" className="form-input" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} placeholder="Re-enter password"/>
             </div>
-            <button
-              className="btn btn-primary"
-              style={{ width: "100%", justifyContent: "center" }}
-              onClick={changePassword}
-              disabled={savingPw}
-            >
-              {savingPw ? <span className="spinner" /> : <><Lock size={15} /> Update Password</>}
+            <button className="btn btn-primary" style={{width:"100%",justifyContent:"center"}} onClick={changePassword} disabled={savingPw}>
+              {savingPw?<span className="spinner"/>:<><Lock size={14}/> Update Password</>}
             </button>
           </div>
 
-          {/* Account Info */}
+          {/* Account */}
           <div className="card">
-            <h3 style={{ fontFamily: "var(--font-display)", marginBottom: 16 }}>Account Info</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ background: "var(--sand)", borderRadius: "var(--radius-sm)", padding: "12px 16px" }}>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                  Signed in as
-                </div>
-                <div style={{ fontWeight: 600, color: "var(--text-dark)" }}>{user?.email}</div>
-              </div>
-              <div style={{ background: "var(--sand)", borderRadius: "var(--radius-sm)", padding: "12px 16px" }}>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                  Application
-                </div>
-                <div style={{ fontWeight: 600, color: "var(--text-dark)" }}>Olive Seeds Social Media Planner</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>v1.0.0</div>
-              </div>
+            <h3 style={{marginBottom:12}}>Account</h3>
+            <div style={{background:"var(--bg)",borderRadius:9,padding:"12px 14px",marginBottom:8}}>
+              <div style={{fontSize:"0.7rem",fontWeight:700,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>Email</div>
+              <div style={{fontWeight:600}}>{user?.email}</div>
+            </div>
+            <div style={{background:"var(--bg)",borderRadius:9,padding:"12px 14px"}}>
+              <div style={{fontSize:"0.7rem",fontWeight:700,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>App Version</div>
+              <div style={{fontWeight:600}}>Olive Seeds SMP v1.1.0</div>
             </div>
           </div>
 
-          {/* Firebase Setup Guide */}
-          <div className="card" style={{ border: "1.5px dashed var(--olive-300)" }}>
-            <h3 style={{ fontFamily: "var(--font-display)", marginBottom: 12, color: "var(--olive-700)" }}>🔥 Firebase Setup</h3>
-            <div style={{ fontSize: "0.82rem", color: "var(--text-mid)", lineHeight: 1.7 }}>
-              <p style={{ marginBottom: 8 }}>To connect your Firebase project:</p>
-              <ol style={{ paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
-                <li>Go to <strong>console.firebase.google.com</strong></li>
-                <li>Create a project &amp; add a Web App</li>
-                <li>Enable <strong>Firestore, Auth (Email/Password)</strong></li>
-                <li>Copy config to <code style={{ background: "var(--sand)", padding: "1px 5px", borderRadius: 4 }}>src/firebase/config.js</code></li>
-                <li>Set Firestore rules to allow authenticated reads/writes</li>
-              </ol>
+          {/* Firebase guide */}
+          <div className="card" style={{borderStyle:"dashed",borderColor:"var(--primary)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+              <div style={{fontSize:"1.1rem"}}>🔥</div>
+              <h4 style={{color:"var(--primary)"}}>Firebase Setup</h4>
             </div>
+            <ol style={{paddingLeft:18,display:"flex",flexDirection:"column",gap:5,fontSize:"0.8rem",color:"var(--text-2)",lineHeight:1.6}}>
+              <li>Go to <strong>console.firebase.google.com</strong></li>
+              <li>Create project → Add Web App</li>
+              <li>Enable <strong>Auth (Email/Password)</strong> + <strong>Firestore</strong></li>
+              <li>Paste config into <code style={{background:"var(--bg)",padding:"1px 5px",borderRadius:4,fontSize:"0.75rem"}}>src/firebase/config.js</code></li>
+              <li>Set Firestore rules: allow read, write if authenticated</li>
+            </ol>
           </div>
         </div>
       </div>
+
+      {/* Confirm Modal */}
+      <Modal open={showConfirm} onClose={()=>setShowConfirm(false)} title="Confirm Day Mapping Change" size="sm"
+        footer={<>
+          <button className="btn btn-secondary" onClick={()=>setShowConfirm(false)}>Cancel</button>
+          <button className="btn btn-primary" onClick={saveDayMapping} disabled={saving}>
+            {saving?<span className="spinner"/>:<><Save size={14}/> Yes, Save</>}
+          </button>
+        </>}>
+        <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"#fef3c7",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <ShieldAlert size={20} color="#d97706"/>
+          </div>
+          <div>
+            <p style={{fontWeight:600,marginBottom:8,color:"var(--text-1)"}}>Review your changes before saving</p>
+            <div style={{display:"flex",flexDirection:"column",gap:5}}>
+              {Object.entries(dayTasks).filter(([d,t])=>t!==savedTasks[d]).map(([day,task])=>(
+                <div key={day} style={{fontSize:"0.82rem",display:"flex",alignItems:"center",gap:8}}>
+                  <strong style={{width:82,color:"var(--text-1)"}}>{day}</strong>
+                  <span style={{color:"var(--danger)",textDecoration:"line-through"}}>{savedTasks[day]}</span>
+                  <span style={{color:"var(--text-3)"}}>→</span>
+                  <span style={{color:"var(--success)",fontWeight:600}}>{task}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
